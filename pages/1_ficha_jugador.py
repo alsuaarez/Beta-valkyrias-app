@@ -12,6 +12,10 @@ def init_connection():
 
 supabase: Client = init_connection()
 
+# Barrera de seguridad
+if 'usuario_actual' not in st.session_state or st.session_state['usuario_actual'] is None:
+    st.switch_page("app.py")
+
 # Comprobar si venimos de la página principal
 if 'jugador_seleccionado' not in st.session_state:
     st.warning("No has seleccionado a ningún jugador. Por favor, vuelve a la Plantilla.")
