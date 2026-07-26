@@ -1,7 +1,10 @@
 import streamlit as st
 from datetime import date
 
-from utils.config import init_connection, aplicar_estilos, requiere_sesion, cabecera
+from utils.config import (
+    init_connection, init_admin_connection, aplicar_estilos, requiere_sesion,
+    cabecera, generar_password_temporal,
+)
 
 # ============================================================
 # CONFIGURACIÓN Y SEGURIDAD
@@ -9,6 +12,7 @@ from utils.config import init_connection, aplicar_estilos, requiere_sesion, cabe
 st.set_page_config(page_title="Gestión de jugadores", page_icon="➕", layout="wide")
 aplicar_estilos()
 supabase = init_connection()
+supabase_admin = init_admin_connection()
 
 requiere_sesion()
 
@@ -23,6 +27,21 @@ cabecera("Gestión de jugadores", "Da de alta nuevos futbolistas en la plantilla
 # ============================================================
 with st.container(border=True):
     st.markdown("#### Nuevo jugador")
+
+    crear_usuario = st.checkbox(
+        "Crear también su cuenta de acceso a la aplicación",
+        value=True,
+        help="Genera un usuario de inicio de sesión para que el jugador pueda "
+             "entrar directamente a su perfil.",
+    )
+    if crear_usuario and supabase_admin is None:
+        st.warning(
+            "⚠️ No se puede crear la cuenta de acceso: falta configurar "
+            "`SUPABASE_SERVICE_KEY` en tu `.env`. El jugador se dará de alta "
+            "igualmente, pero sin usuario. La sección más abajo del proyecto "
+            "explica cómo obtener esa clave."
+        )
+
     with st.form("form_nuevo_jugador", clear_on_submit=True):
         c1, c2 = st.columns(2)
         nombre = c1.text_input("Nombre completo *")
@@ -40,14 +59,23 @@ with st.container(border=True):
         altura_cm = c7.number_input("Altura (cm)", min_value=0, max_value=230, step=1)
         url_foto = c8.text_input("URL de la foto", placeholder="https://…")
 
+        st.markdown("---")
+        email_acceso = st.text_input(
+            "Correo electrónico de acceso (para su usuario)",
+            placeholder="jugador@ejemplo.com",
+            disabled=not crear_usuario,
+        )
+
         btn_guardar = st.form_submit_button("💾 Dar de alta jugador", type="primary")
 
         if btn_guardar:
             if not nombre or dorsal is None or not posicion:
                 st.warning("⚠️ El nombre, el dorsal y la posición son obligatorios.")
+            elif crear_usuario and supabase_admin is not None and not email_acceso:
+                st.warning("⚠️ Indica el correo electrónico para crear su cuenta de acceso.")
             else:
                 try:
-                    supabase.table("jugadores").insert({
+                    insert_resp = supabase.table("jugadores").insert({
                         "nombre": nombre,
                         "dorsal": int(dorsal),
                         "posicion": posicion,
@@ -57,7 +85,30 @@ with st.container(border=True):
                         "altura_cm": int(altura_cm) if altura_cm else None,
                         "url_foto": url_foto or None,
                     }).execute()
+
+                    id_jugador_nuevo = insert_resp.data[0]["id_jugador"]
                     st.success(f"✅ {nombre} se ha añadido a la plantilla.")
+
+                    if crear_usuario and supabase_admin is not None and email_acceso:
+                        password_temporal = generar_password_temporal()
+                        usuario_auth = supabase_admin.auth.admin.create_user({
+                            "email": email_acceso,
+                            "password": password_temporal,
+                            "email_confirm": True,
+                        })
+                        supabase.table("usuarios_roles").insert({
+                            "correo": email_acceso,
+                            "rol": "Jugador",
+                            "id_jugador": id_jugador_nuevo,
+                            "auth_user_id": usuario_auth.user.id,
+                        }).execute()
+
+                        st.info(
+                            f"🔑 Cuenta creada. Comparte estas credenciales con el jugador "
+                            f"de forma segura (le recomendamos cambiar la contraseña al entrar):\n\n"
+                            f"**Correo:** {email_acceso}\n\n"
+                            f"**Contraseña temporal:** `{password_temporal}`"
+                        )
                 except Exception as e:
                     st.error(f"Error al guardar el jugador: {e}")
 

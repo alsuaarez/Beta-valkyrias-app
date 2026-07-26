@@ -101,11 +101,19 @@ else:
         st.session_state["jugador_seleccionado"] = st.session_state["id_jugador_vinculado"]
         st.session_state["nombre_seleccionado"] = "Tu Perfil"
 
-        st.page_link(
-            "pages/1_ficha_jugador.py",
-            label="Ir a mis estadísticas personales",
-            icon="📊",
-        )
+        c_link1, c_link2 = st.columns(2)
+        with c_link1:
+            st.page_link(
+                "pages/1_ficha_jugador.py",
+                label="Ir a mis estadísticas personales",
+                icon="📊",
+            )
+        with c_link2:
+            st.page_link(
+                "pages/2_informes.py",
+                label="Ver mis informes",
+                icon="📁",
+            )
 
     # --------------------------------------------------------
     # ROL ADMIN / TÉCNICO: plantilla completa

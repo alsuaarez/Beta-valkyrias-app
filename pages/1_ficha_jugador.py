@@ -4,8 +4,9 @@ import plotly.graph_objects as go
 from datetime import date
 
 from utils.config import (
-    init_connection, aplicar_estilos, requiere_sesion, es_staff,
-    color_posicion, badge_html, calcular_edad, COLOR_PRIMARIO, COLOR_SECUNDARIO,
+    init_connection, init_admin_connection, aplicar_estilos, requiere_sesion, es_staff,
+    color_posicion, badge_html, calcular_edad, generar_password_temporal,
+    COLOR_PRIMARIO, COLOR_SECUNDARIO,
 )
 
 # ============================================================
@@ -14,6 +15,7 @@ from utils.config import (
 st.set_page_config(page_title="Perfil del jugador", page_icon="👤", layout="wide")
 aplicar_estilos()
 supabase = init_connection()
+supabase_admin = init_admin_connection()
 
 requiere_sesion()
 
@@ -111,7 +113,9 @@ with tab_fisico:
     if datos_tests:
         df = pd.DataFrame(datos_tests)
         df["fecha_test"] = pd.to_datetime(df["fecha_test"])
-        df.sort_values("fecha_test", inplace=True)
+        # Orden cronológico ascendente: lo más antiguo a la izquierda, lo más
+        # reciente a la derecha (nunca al revés, aunque cambie el orden de Supabase)
+        df.sort_values("fecha_test", ascending=True, inplace=True)
 
         if metricas_seleccionadas:
             st.markdown("#### Evolución del jugador")
@@ -146,7 +150,7 @@ with tab_fisico:
                         margin=dict(l=10, r=10, t=10, b=10),
                         plot_bgcolor="white",
                         paper_bgcolor="white",
-                        xaxis=dict(showgrid=False),
+                        xaxis=dict(showgrid=False, autorange=True, type="date"),
                         yaxis=dict(showgrid=True, gridcolor="#EEF1F5"),
                     )
                     st.plotly_chart(fig, width='stretch')
@@ -348,6 +352,66 @@ if tab_editar is not None:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al actualizar la ficha: {e}")
+
+        st.markdown("---")
+        st.markdown("#### Cuenta de acceso")
+
+        if supabase_admin is None:
+            st.warning(
+                "⚠️ Falta configurar `SUPABASE_SERVICE_KEY` en tu `.env` para poder "
+                "crear usuarios o resetear contraseñas desde aquí."
+            )
+        else:
+            usuario_resp = (
+                supabase.table("usuarios_roles")
+                .select("*")
+                .eq("id_jugador", id_jugador)
+                .execute()
+            )
+            usuario_existente = usuario_resp.data[0] if usuario_resp.data else None
+
+            if usuario_existente:
+                st.success(f"Este jugador ya tiene acceso con el correo **{usuario_existente['correo']}**.")
+                if st.button("🔑 Generar nueva contraseña temporal"):
+                    try:
+                        nueva_password = generar_password_temporal()
+                        supabase_admin.auth.admin.update_user_by_id(
+                            usuario_existente["auth_user_id"],
+                            {"password": nueva_password},
+                        )
+                        st.info(
+                            f"Nueva contraseña temporal para **{usuario_existente['correo']}**:\n\n"
+                            f"`{nueva_password}`\n\n"
+                            "Compártela con el jugador de forma segura."
+                        )
+                    except Exception as e:
+                        st.error(f"Error al restablecer la contraseña: {e}")
+            else:
+                st.info("Este jugador todavía no tiene cuenta de acceso.")
+                with st.form("form_crear_usuario_jugador"):
+                    email_nuevo = st.text_input("Correo electrónico de acceso")
+                    if st.form_submit_button("Crear cuenta de acceso"):
+                        if not email_nuevo:
+                            st.warning("⚠️ Indica un correo electrónico.")
+                        else:
+                            try:
+                                password_temporal = generar_password_temporal()
+                                usuario_auth = supabase_admin.auth.admin.create_user({
+                                    "email": email_nuevo,
+                                    "password": password_temporal,
+                                    "email_confirm": True,
+                                })
+                                supabase.table("usuarios_roles").insert({
+                                    "correo": email_nuevo,
+                                    "rol": "Jugador",
+                                    "id_jugador": id_jugador,
+                                    "auth_user_id": usuario_auth.user.id,
+                                }).execute()
+                                st.success(
+                                    f"✅ Cuenta creada. Contraseña temporal: `{password_temporal}`"
+                                )
+                            except Exception as e:
+                                st.error(f"Error al crear la cuenta: {e}")
 
         st.markdown("---")
         with st.expander("🗑️ Eliminar jugador", expanded=False):

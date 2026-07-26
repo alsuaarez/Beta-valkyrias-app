@@ -7,6 +7,9 @@ y profesional.
 import streamlit as st
 from supabase import create_client, Client
 import os
+import base64
+import secrets
+import string
 from datetime import date, datetime
 
 # ============================================================
@@ -15,6 +18,30 @@ from datetime import date, datetime
 @st.cache_resource
 def init_connection() -> Client:
     return create_client(os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY"))
+
+
+@st.cache_resource
+def init_admin_connection():
+    """
+    Cliente con la service_role key de Supabase, necesario únicamente para
+    crear usuarios de Auth o resetear contraseñas desde la app (operaciones
+    de administrador). Se usa SOLO en el servidor (nunca llega al navegador).
+
+    Necesitas añadir SUPABASE_SERVICE_KEY a tu .env con la "service_role key"
+    que encuentras en Supabase > Project Settings > API > service_role.
+    ¡OJO! Esa clave tiene permisos totales, nunca la subas a un repo público
+    ni la metas en el .env que compartes con nadie.
+    """
+    service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not service_key:
+        return None
+    return create_client(os.environ.get("SUPABASE_URL"), service_key)
+
+
+def generar_password_temporal(longitud: int = 10) -> str:
+    """Genera una contraseña temporal segura y fácil de transcribir a mano."""
+    alfabeto = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alfabeto) for _ in range(longitud))
 
 
 # ============================================================
@@ -75,11 +102,49 @@ def calcular_edad(fecha_nacimiento):
 # ============================================================
 # ESTILOS GLOBALES (se inyectan al principio de cada página)
 # ============================================================
+@st.cache_data
+def _escudo_base64() -> str:
+    """Lee assets/escudo.png y lo devuelve codificado en base64 para poder
+    usarlo como fondo CSS sin depender de servir archivos estáticos."""
+    ruta = os.path.join(os.path.dirname(__file__), "..", "assets", "escudo.png")
+    try:
+        with open(ruta, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except FileNotFoundError:
+        return ""
+
+
 def aplicar_estilos():
+    escudo_b64 = _escudo_base64()
+    fondo_escudo_css = (
+        f"""
+        .stApp::before {{
+            content: "";
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: url('data:image/png;base64,{escudo_b64}');
+            background-repeat: no-repeat;
+            background-position: center 40%;
+            background-size: 640px;
+            opacity: 0.05;
+            pointer-events: none;
+            z-index: 0;
+        }}
+        .stApp > header, .stApp [data-testid="stAppViewContainer"] > .main {{
+            position: relative;
+            z-index: 1;
+        }}
+        """
+        if escudo_b64
+        else ""
+    )
+
     st.markdown(
         f"""
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        {fondo_escudo_css}
 
         html, body, [class*="css"] {{
             font-family: 'Inter', sans-serif;
@@ -219,3 +284,38 @@ def requiere_sesion():
 def es_staff() -> bool:
     """Admin o Técnico: roles con permisos de edición/escritura."""
     return st.session_state.get("rol") in ("Admin", "Tecnico")
+
+
+# ============================================================
+# INFORMES: categorías y reglas de visibilidad
+# ============================================================
+CATEGORIAS_INFORME = [
+    "Pretemporada",
+    "Analisis Propio Pre",
+    "Analisis Propio Post",
+    "Analisis Rival Pre",
+    "Analisis Rival Post",
+    "Individual",
+]
+
+ETIQUETAS_CATEGORIA = {
+    "Pretemporada": "🏋️ Pretemporada",
+    "Analisis Propio Pre": "🔵 Análisis propio · Pre-partido",
+    "Analisis Propio Post": "🔵 Análisis propio · Post-partido",
+    "Analisis Rival Pre": "🔴 Análisis rival · Pre-partido",
+    "Analisis Rival Post": "🔴 Análisis rival · Post-partido",
+    "Individual": "👤 Individual",
+}
+
+
+def jugador_tiene_acceso(supabase, id_informe, id_jugador) -> bool:
+    """Comprueba si un jugador concreto tiene acceso concedido a un informe
+    marcado como 'Individual'."""
+    r = (
+        supabase.table("informes_acceso")
+        .select("id")
+        .eq("id_informe", id_informe)
+        .eq("id_jugador", id_jugador)
+        .execute()
+    )
+    return bool(r.data)
