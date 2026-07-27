@@ -25,7 +25,8 @@ if "jugador_seleccionado" not in st.session_state:
     st.stop()
 
 id_jugador = st.session_state["jugador_seleccionado"]
-puede_editar = es_staff()
+puede_editar = es_staff()               # Admin y Técnico: registrar tests y estadísticas
+puede_editar_perfil = st.session_state.get("rol") == "Admin"  # Solo Admin: editar/eliminar ficha
 
 
 @st.cache_data(ttl=30)
@@ -74,12 +75,12 @@ st.markdown("---")
 # PESTAÑAS
 # ============================================================
 nombres_tabs = ["📈 Rendimiento físico", "⚽ Estadísticas de partido"]
-if puede_editar:
+if puede_editar_perfil:
     nombres_tabs.append("✏️ Editar ficha")
 
 tabs = st.tabs(nombres_tabs)
 tab_fisico, tab_partidos = tabs[0], tabs[1]
-tab_editar = tabs[2] if puede_editar else None
+tab_editar = tabs[2] if puede_editar_perfil else None
 
 # ============================================================
 # PESTAÑA 1: RENDIMIENTO FÍSICO

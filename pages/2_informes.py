@@ -79,7 +79,7 @@ with tab_consultar:
             visibles = []
             for informe in datos_informes:
                 if informe.get("tipo") == "Individual":
-                    if jugador_tiene_acceso(supabase, informe["id"], id_jugador_actual):
+                    if jugador_tiene_acceso(supabase, informe["id_informe"], id_jugador_actual):
                         visibles.append(informe)
                 else:
                     visibles.append(informe)  # informes de partido/pretemporada: toda la plantilla
@@ -179,7 +179,7 @@ if tab_subir is not None:
 
                         # Si es individual, guardamos también los accesos concedidos
                         if categoria_sel == "Individual" and insert_resp.data:
-                            id_informe_nuevo = insert_resp.data[0]["id"]
+                            id_informe_nuevo = insert_resp.data[0]["id_informe"]
                             filas_acceso = [
                                 {"id_informe": id_informe_nuevo, "id_jugador": id_j}
                                 for id_j in jugadores_acceso_sel
