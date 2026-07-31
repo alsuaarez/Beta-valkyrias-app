@@ -3,7 +3,7 @@ from datetime import date
 
 from utils.config import (
     init_connection, init_admin_connection, aplicar_estilos, requiere_sesion,
-    cabecera, generar_password_temporal,
+    cabecera, generar_password_temporal, subir_foto_jugador,
 )
 
 # ============================================================
@@ -57,7 +57,15 @@ with st.container(border=True):
 
         c7, c8 = st.columns(2)
         altura_cm = c7.number_input("Altura (cm)", min_value=0, max_value=230, step=1)
-        url_foto = c8.text_input("URL de la foto", placeholder="https://…")
+        with c8:
+            foto_archivo = st.file_uploader(
+                "Foto del jugador", type=["jpg", "jpeg", "png", "webp"],
+                help="Se sube automáticamente a Supabase Storage.",
+            )
+        url_foto_manual = st.text_input(
+            "…o pega una URL de foto (opcional, solo si no subes archivo)",
+            placeholder="https://…",
+        )
 
         st.markdown("---")
         email_acceso = st.text_input(
@@ -83,10 +91,25 @@ with st.container(border=True):
                         "fecha_nacimiento": str(fecha_nacimiento),
                         "nacionalidad": nacionalidad or None,
                         "altura_cm": int(altura_cm) if altura_cm else None,
-                        "url_foto": url_foto or None,
+                        "url_foto": url_foto_manual or None,
                     }).execute()
 
                     id_jugador_nuevo = insert_resp.data[0]["id_jugador"]
+
+                    if foto_archivo is not None:
+                        try:
+                            url_publica = subir_foto_jugador(
+                                supabase, id_jugador_nuevo, foto_archivo, supabase_admin
+                            )
+                            supabase.table("jugadores").update({"url_foto": url_publica}).eq(
+                                "id_jugador", id_jugador_nuevo
+                            ).execute()
+                        except Exception as e:
+                            st.warning(
+                                f"El jugador se creó, pero la foto no se pudo subir: {e}. "
+                                f"Comprueba que el bucket 'fotos-jugadores' existe y es público."
+                            )
+
                     st.success(f"✅ {nombre} se ha añadido a la plantilla.")
 
                     if crear_usuario and supabase_admin is not None and email_acceso:

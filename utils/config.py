@@ -44,6 +44,56 @@ def generar_password_temporal(longitud: int = 10) -> str:
     return "".join(secrets.choice(alfabeto) for _ in range(longitud))
 
 
+BUCKET_FOTOS = "fotos-jugadores"
+
+
+def asegurar_bucket_fotos(supabase_admin) -> None:
+    """Crea el bucket de fotos si todavía no existe. Necesita el cliente admin
+    (service_role); si no está disponible, no hace nada (y la subida fallará
+    con un error claro más abajo)."""
+    if supabase_admin is None:
+        return
+    try:
+        supabase_admin.storage.create_bucket(BUCKET_FOTOS, options={"public": True})
+    except Exception:
+        pass  # ya existía, o no se pudo crear por otro motivo (se verá en el siguiente intento)
+
+
+def subir_foto_jugador(supabase, id_jugador: int, archivo, supabase_admin=None) -> str:
+    """
+    Sube la foto de un jugador al bucket 'fotos-jugadores' de Supabase Storage
+    y devuelve la URL pública para guardar en jugadores.url_foto.
+
+    Usa el cliente admin (service_role) para la subida: la clave anon no
+    tiene permiso de escritura en Storage por defecto (aunque el bucket sea
+    público para lectura), así que sin service_role la subida da 403.
+    """
+    if supabase_admin is None:
+        raise RuntimeError(
+            "Falta configurar SUPABASE_SERVICE_KEY en tu .env: es necesaria para "
+            "poder subir archivos a Storage, no solo para gestionar usuarios."
+        )
+
+    extension = archivo.name.split(".")[-1].lower()
+    ruta = f"jugador_{id_jugador}.{extension}"
+    contenido = archivo.getvalue()
+
+    try:
+        supabase_admin.storage.from_(BUCKET_FOTOS).upload(
+            ruta, contenido, {"content-type": archivo.type, "upsert": "true"}
+        )
+    except Exception as e:
+        if "Bucket not found" in str(e):
+            asegurar_bucket_fotos(supabase_admin)
+            supabase_admin.storage.from_(BUCKET_FOTOS).upload(
+                ruta, contenido, {"content-type": archivo.type, "upsert": "true"}
+            )
+        else:
+            raise
+
+    return supabase.storage.from_(BUCKET_FOTOS).get_public_url(ruta)
+
+
 # ============================================================
 # IDENTIDAD VISUAL DEL CLUB
 # Cambia estos valores si quieres ajustar los colores o el escudo.
@@ -112,6 +162,15 @@ def _escudo_base64() -> str:
             return base64.b64encode(f.read()).decode("utf-8")
     except FileNotFoundError:
         return ""
+
+
+def renderizar_html(fragmento: str):
+    """Renderiza un fragmento de HTML con st.markdown quitando la sangría de
+    cada línea. Si no se hace esto, Markdown puede interpretar líneas con
+    varios espacios de indentación como un bloque de código y mostrarlas
+    como texto en crudo en vez de renderizarlas como HTML."""
+    limpio = "\n".join(linea.strip() for linea in fragmento.strip("\n").split("\n"))
+    st.markdown(limpio, unsafe_allow_html=True)
 
 
 def aplicar_estilos():
@@ -264,14 +323,13 @@ def aplicar_estilos():
 
 def cabecera(titulo: str, subtitulo: str = "", icono: str = "⚽"):
     """Cabecera visual reutilizable con degradado de color del club."""
-    st.markdown(
+    renderizar_html(
         f"""
         <div class="cabecera-club">
             <h1>{icono} {titulo}</h1>
             {f"<p>{subtitulo}</p>" if subtitulo else ""}
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -319,3 +377,79 @@ def jugador_tiene_acceso(supabase, id_informe, id_jugador) -> bool:
         .execute()
     )
     return bool(r.data)
+
+
+# ============================================================
+# PARTIDO: catálogo de formaciones para la convocatoria
+# Cada slot tiene una clave única, una etiqueta y una posición en
+# porcentaje sobre el campo (x: 0=izquierda 100=derecha,
+# y: 0=portería rival 100=nuestra portería).
+# Puedes ampliar este diccionario con más formaciones cuando quieras.
+# ============================================================
+FORMACIONES = {
+    "1-4-3-3": [
+        {"clave": "POR", "etiqueta": "Portero", "x": 50, "y": 92},
+        {"clave": "LD", "etiqueta": "Lateral derecho", "x": 82, "y": 70},
+        {"clave": "DFC1", "etiqueta": "Central derecho", "x": 62, "y": 74},
+        {"clave": "DFC2", "etiqueta": "Central izquierdo", "x": 38, "y": 74},
+        {"clave": "LI", "etiqueta": "Lateral izquierdo", "x": 18, "y": 70},
+        {"clave": "MCD", "etiqueta": "Mediocentro defensivo", "x": 50, "y": 58},
+        {"clave": "MC1", "etiqueta": "Mediocentro derecho", "x": 68, "y": 48},
+        {"clave": "MC2", "etiqueta": "Mediocentro izquierdo", "x": 32, "y": 48},
+        {"clave": "ED", "etiqueta": "Extremo derecho", "x": 80, "y": 25},
+        {"clave": "DC", "etiqueta": "Delantero centro", "x": 50, "y": 15},
+        {"clave": "EI", "etiqueta": "Extremo izquierdo", "x": 20, "y": 25},
+    ],
+    "1-4-4-2": [
+        {"clave": "POR", "etiqueta": "Portero", "x": 50, "y": 92},
+        {"clave": "LD", "etiqueta": "Lateral derecho", "x": 82, "y": 70},
+        {"clave": "DFC1", "etiqueta": "Central derecho", "x": 62, "y": 74},
+        {"clave": "DFC2", "etiqueta": "Central izquierdo", "x": 38, "y": 74},
+        {"clave": "LI", "etiqueta": "Lateral izquierdo", "x": 18, "y": 70},
+        {"clave": "MD", "etiqueta": "Interior derecho", "x": 80, "y": 45},
+        {"clave": "MC1", "etiqueta": "Mediocentro derecho", "x": 58, "y": 50},
+        {"clave": "MC2", "etiqueta": "Mediocentro izquierdo", "x": 42, "y": 50},
+        {"clave": "MI", "etiqueta": "Interior izquierdo", "x": 20, "y": 45},
+        {"clave": "DC1", "etiqueta": "Delantero derecho", "x": 60, "y": 15},
+        {"clave": "DC2", "etiqueta": "Delantero izquierdo", "x": 40, "y": 15},
+    ],
+    "1-4-2-3-1": [
+        {"clave": "POR", "etiqueta": "Portero", "x": 50, "y": 92},
+        {"clave": "LD", "etiqueta": "Lateral derecho", "x": 82, "y": 70},
+        {"clave": "DFC1", "etiqueta": "Central derecho", "x": 62, "y": 74},
+        {"clave": "DFC2", "etiqueta": "Central izquierdo", "x": 38, "y": 74},
+        {"clave": "LI", "etiqueta": "Lateral izquierdo", "x": 18, "y": 70},
+        {"clave": "MCD1", "etiqueta": "Mediocentro derecho", "x": 60, "y": 58},
+        {"clave": "MCD2", "etiqueta": "Mediocentro izquierdo", "x": 40, "y": 58},
+        {"clave": "ED", "etiqueta": "Extremo derecho", "x": 80, "y": 35},
+        {"clave": "MCO", "etiqueta": "Mediapunta", "x": 50, "y": 32},
+        {"clave": "EI", "etiqueta": "Extremo izquierdo", "x": 20, "y": 35},
+        {"clave": "DC", "etiqueta": "Delantero centro", "x": 50, "y": 15},
+    ],
+    "1-3-5-2": [
+        {"clave": "POR", "etiqueta": "Portero", "x": 50, "y": 92},
+        {"clave": "DFC1", "etiqueta": "Central derecho", "x": 70, "y": 76},
+        {"clave": "DFC2", "etiqueta": "Central", "x": 50, "y": 79},
+        {"clave": "DFC3", "etiqueta": "Central izquierdo", "x": 30, "y": 76},
+        {"clave": "LD", "etiqueta": "Carrilero derecho", "x": 90, "y": 55},
+        {"clave": "MC1", "etiqueta": "Mediocentro derecho", "x": 62, "y": 52},
+        {"clave": "MC2", "etiqueta": "Mediocentro", "x": 50, "y": 48},
+        {"clave": "MC3", "etiqueta": "Mediocentro izquierdo", "x": 38, "y": 52},
+        {"clave": "LI", "etiqueta": "Carrilero izquierdo", "x": 10, "y": 55},
+        {"clave": "DC1", "etiqueta": "Delantero derecho", "x": 60, "y": 15},
+        {"clave": "DC2", "etiqueta": "Delantero izquierdo", "x": 40, "y": 15},
+    ],
+    "1-4-1-4-1": [
+        {"clave": "POR", "etiqueta": "Portero", "x": 50, "y": 92},
+        {"clave": "LD", "etiqueta": "Lateral derecho", "x": 82, "y": 72},
+        {"clave": "DFC1", "etiqueta": "Central derecho", "x": 62, "y": 76},
+        {"clave": "DFC2", "etiqueta": "Central izquierdo", "x": 38, "y": 76},
+        {"clave": "LI", "etiqueta": "Lateral izquierdo", "x": 18, "y": 72},
+        {"clave": "MCD", "etiqueta": "Mediocentro defensivo", "x": 50, "y": 60},
+        {"clave": "ED", "etiqueta": "Interior/Extremo derecho", "x": 82, "y": 42},
+        {"clave": "MC1", "etiqueta": "Mediocentro derecho", "x": 58, "y": 42},
+        {"clave": "MC2", "etiqueta": "Mediocentro izquierdo", "x": 42, "y": 42},
+        {"clave": "EI", "etiqueta": "Interior/Extremo izquierdo", "x": 18, "y": 42},
+        {"clave": "DC", "etiqueta": "Delantero centro", "x": 50, "y": 15},
+    ],
+}

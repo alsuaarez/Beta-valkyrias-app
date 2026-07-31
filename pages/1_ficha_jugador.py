@@ -5,7 +5,7 @@ from datetime import date
 
 from utils.config import (
     init_connection, init_admin_connection, aplicar_estilos, requiere_sesion, es_staff,
-    color_posicion, badge_html, calcular_edad, generar_password_temporal,
+    color_posicion, badge_html, calcular_edad, generar_password_temporal, subir_foto_jugador,
     COLOR_PRIMARIO, COLOR_SECUNDARIO,
 )
 
@@ -332,12 +332,33 @@ if tab_editar is not None:
                 "Altura (cm)", min_value=0, max_value=230, step=1,
                 value=int(jugador.get("altura_cm") or 0),
             )
-            foto_edit = c8.text_input("URL de la foto", value=jugador.get("url_foto", "") or "")
+            with c8:
+                foto_archivo_edit = st.file_uploader(
+                    "Cambiar foto", type=["jpg", "jpeg", "png", "webp"],
+                    help="Se sube automáticamente a Supabase Storage. Si no subes nada, se mantiene la foto actual.",
+                )
+            foto_edit = st.text_input(
+                "…o pega una URL de foto (opcional, solo si no subes archivo)",
+                value=jugador.get("url_foto", "") or "",
+            )
 
             guardar = st.form_submit_button("💾 Guardar cambios", type="primary")
 
             if guardar:
                 try:
+                    url_foto_final = foto_edit
+                    if foto_archivo_edit is not None:
+                        try:
+                            url_foto_final = subir_foto_jugador(
+                                supabase, id_jugador, foto_archivo_edit, supabase_admin
+                            )
+                        except Exception as e:
+                            st.warning(
+                                f"No se pudo subir la nueva foto: {e}. Se mantiene la anterior. "
+                                f"Comprueba que el bucket 'fotos-jugadores' existe y es público."
+                            )
+                            url_foto_final = jugador.get("url_foto", "")
+
                     supabase.table("jugadores").update({
                         "nombre": nombre_edit,
                         "dorsal": int(dorsal_edit),
@@ -346,7 +367,7 @@ if tab_editar is not None:
                         "fecha_nacimiento": str(fecha_nac_edit),
                         "nacionalidad": nacionalidad_edit,
                         "altura_cm": int(altura_edit) if altura_edit else None,
-                        "url_foto": foto_edit,
+                        "url_foto": url_foto_final,
                     }).eq("id_jugador", id_jugador).execute()
                     st.success("✅ Ficha actualizada correctamente.")
                     st.cache_data.clear()
