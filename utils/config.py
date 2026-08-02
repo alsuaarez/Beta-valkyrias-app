@@ -10,7 +10,10 @@ import os
 import base64
 import secrets
 import string
+import io
+import urllib.request
 from datetime import date, datetime
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # ============================================================
 # CONEXIÓN A SUPABASE (una sola vez, cacheada, para toda la app)
@@ -453,3 +456,215 @@ FORMACIONES = {
         {"clave": "DC", "etiqueta": "Delantero centro", "x": 50, "y": 15},
     ],
 }
+
+
+# ============================================================
+# GENERADOR DE IMÁGENES PNG DESCARGABLES (para llevar las pizarras y el
+# Once a la tablet sin necesidad de imprimir ni de tener conexión en el
+# momento del partido)
+# ============================================================
+def _fuente(tamano: int, negrita: bool = False):
+    """Fuente con soporte completo de tildes y eñes (á é í ó ú ñ, etc.).
+    Usa la DejaVu Sans incluida en assets/fuentes/; si por lo que sea no
+    está disponible, cae a la fuente básica de Pillow (sin tildes)."""
+    nombre_archivo = "DejaVuSans-Bold.ttf" if negrita else "DejaVuSans.ttf"
+    ruta = os.path.join(os.path.dirname(__file__), "..", "assets", "fuentes", nombre_archivo)
+    try:
+        return ImageFont.truetype(ruta, tamano)
+    except Exception:
+        try:
+            return ImageFont.load_default(size=tamano)
+        except TypeError:
+            return ImageFont.load_default()
+
+
+def _foto_circular(url: str, diametro: int):
+    """Descarga una foto de jugador y la recorta en círculo. Si falla
+    (sin conexión, URL rota, etc.) devuelve None y se dibuja un círculo liso."""
+    if not url:
+        return None
+    try:
+        with urllib.request.urlopen(url, timeout=6) as resp:
+            datos = resp.read()
+        img = Image.open(io.BytesIO(datos)).convert("RGBA")
+        img = ImageOps.fit(img, (diametro, diametro), Image.LANCZOS)
+        mascara = Image.new("L", (diametro, diametro), 0)
+        ImageDraw.Draw(mascara).ellipse((0, 0, diametro, diametro), fill=255)
+        img.putalpha(mascara)
+        return img
+    except Exception:
+        return None
+
+
+class _LienzoCampo:
+    """Dibuja un campo (completo o medio campo) sobre una imagen PIL, con las
+    mismas proporciones y líneas que se ven en la app, listo para pegar
+    jugadores, marcas rivales, balón y flechas encima."""
+
+    def __init__(self, medio_campo: bool, ancho: int = 1000):
+        self.ancho = ancho
+        self.medio_campo = medio_campo
+        self.alto_pitch = int(ancho * (0.70 if medio_campo else 1.35))
+        self.margen_top = 110
+        self.margen_bottom = 60  # colchón de seguridad para que las etiquetas cerca del borde no se corten
+        self.alto = self.alto_pitch + self.margen_top + self.margen_bottom
+
+        self.img = Image.new("RGB", (self.ancho, self.alto), COLOR_PRIMARIO)
+        self.draw = ImageDraw.Draw(self.img, "RGBA")
+
+        self._dibujar_cesped()
+        self._dibujar_lineas()
+
+    def px(self, x_pct, y_pct):
+        return (x_pct / 100 * self.ancho, self.margen_top + y_pct / 100 * self.alto_pitch)
+
+    def bbox(self, cx, cy, r):
+        x1, y1 = self.px(cx - r, cy - r)
+        x2, y2 = self.px(cx + r, cy + r)
+        return [x1, y1, x2, y2]
+
+    def _dibujar_cesped(self):
+        franjas = 10
+        alto_franja = self.alto_pitch / franjas
+        verdes = ["#2E7D46", "#33884C"]
+        for i in range(franjas):
+            y1 = self.margen_top + i * alto_franja
+            y2 = self.margen_top + (i + 1) * alto_franja
+            self.draw.rectangle([0, y1, self.ancho, y2], fill=verdes[i % 2])
+        # Colchón de seguridad debajo de la línea de gol, del mismo verde que
+        # la última franja, para que las etiquetas cercanas al borde tengan
+        # sitio y no se corten contra el final de la imagen.
+        self.draw.rectangle(
+            [0, self.margen_top + self.alto_pitch, self.ancho, self.alto],
+            fill=verdes[(franjas - 1) % 2],
+        )
+
+    def _dibujar_lineas(self):
+        blanco = (255, 255, 255, 190)
+        grosor = 3
+        d = self.draw
+
+        # Borde del campo (líneas de banda, fondo y medio campo si aplica)
+        d.rectangle([self.px(0, 0), self.px(100, 100)], outline=blanco, width=grosor)
+
+        if self.medio_campo:
+            d.arc(self.bbox(50, 0, 15), start=0, end=180, fill=blanco, width=grosor)
+            d.ellipse(self.bbox(50, 0, 0.9), fill=blanco)
+
+            d.rectangle([self.px(21, 82), self.px(79, 100)], outline=blanco, width=grosor)
+            d.rectangle([self.px(37, 94), self.px(63, 100)], outline=blanco, width=grosor)
+            d.ellipse(self.bbox(50, 88, 0.9), fill=blanco)
+            d.arc(self.bbox(50, 88, 10), start=180, end=360, fill=blanco, width=grosor)
+
+            d.arc(self.bbox(0, 100, 3), start=180, end=270, fill=blanco, width=grosor)
+            d.arc(self.bbox(100, 100, 3), start=270, end=360, fill=blanco, width=grosor)
+        else:
+            d.line([self.px(0, 50), self.px(100, 50)], fill=blanco, width=grosor)
+            d.ellipse(self.bbox(50, 50, 9), outline=blanco, width=grosor)
+            d.ellipse(self.bbox(50, 50, 0.9), fill=blanco)
+
+            d.rectangle([self.px(21, 0), self.px(79, 14)], outline=blanco, width=grosor)
+            d.rectangle([self.px(37, 0), self.px(63, 5)], outline=blanco, width=grosor)
+            d.ellipse(self.bbox(50, 10, 0.9), fill=blanco)
+            d.arc(self.bbox(50, 10, 8), start=0, end=180, fill=blanco, width=grosor)
+
+            d.rectangle([self.px(21, 86), self.px(79, 100)], outline=blanco, width=grosor)
+            d.rectangle([self.px(37, 95), self.px(63, 100)], outline=blanco, width=grosor)
+            d.ellipse(self.bbox(50, 90, 0.9), fill=blanco)
+            d.arc(self.bbox(50, 86, 8), start=180, end=360, fill=blanco, width=grosor)
+
+    def titulo(self, linea1: str, linea2: str = ""):
+        self.draw.text((24, 20), linea1, font=_fuente(34, negrita=True), fill="white")
+        if linea2:
+            self.draw.text((24, 60), linea2, font=_fuente(20), fill=COLOR_SECUNDARIO)
+
+    def jugador(self, x_pct, y_pct, url_foto, nombre, borde="#2E86DE"):
+        cx, cy = self.px(x_pct, y_pct)
+        diametro = 64
+        foto = _foto_circular(url_foto, diametro)
+        if foto is not None:
+            self.img.paste(foto, (int(cx - diametro / 2), int(cy - diametro / 2)), foto)
+            self.draw.ellipse(
+                [cx - diametro / 2, cy - diametro / 2, cx + diametro / 2, cy + diametro / 2],
+                outline=borde, width=4,
+            )
+        else:
+            self.draw.ellipse(
+                [cx - diametro / 2, cy - diametro / 2, cx + diametro / 2, cy + diametro / 2],
+                fill=borde, outline="white", width=3,
+            )
+        self._texto_centrado(cx, cy + diametro / 2 + 8, nombre, tamano=18)
+
+    def marca_rival(self, x_pct, y_pct, etiqueta):
+        cx, cy = self.px(x_pct, y_pct)
+        r = 26
+        self.draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill="#E74C3C", outline="white", width=3)
+        self._texto_centrado(cx, cy, etiqueta or "R", tamano=18, color="white")
+
+    def balon(self, x_pct, y_pct):
+        cx, cy = self.px(x_pct, y_pct)
+        r = 14
+        self.draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill="white", outline="black", width=2)
+
+    def flecha(self, x1, y1, x2, y2):
+        p1 = self.px(x1, y1)
+        p2 = self.px(x2, y2)
+        color = COLOR_SECUNDARIO
+        self.draw.line([p1, p2], fill=color, width=5)
+        import math
+        ang = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+        largo, ancho_punta = 18, 10
+        punta = [
+            p2,
+            (p2[0] - largo * math.cos(ang - math.pi / 7), p2[1] - largo * math.sin(ang - math.pi / 7)),
+            (p2[0] - largo * math.cos(ang + math.pi / 7), p2[1] - largo * math.sin(ang + math.pi / 7)),
+        ]
+        self.draw.polygon(punta, fill=color)
+
+    def _texto_centrado(self, cx, cy, texto, tamano=18, color="white", negrita=True):
+        fuente = _fuente(tamano, negrita=negrita)
+        bbox = self.draw.textbbox((0, 0), texto, font=fuente)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        # sombra ligera para que se lea sobre el césped
+        self.draw.text((cx - w / 2 + 1, cy - h / 2 + 1), texto, font=fuente, fill="black")
+        self.draw.text((cx - w / 2, cy - h / 2), texto, font=fuente, fill=color)
+
+    def bytes_png(self) -> bytes:
+        buffer = io.BytesIO()
+        self.img.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+
+def imagen_pizarra_png(elementos, mapa_jugadores, nombre_pizarra, nombre_partido) -> bytes:
+    lienzo = _LienzoCampo(medio_campo=True)
+    lienzo.titulo(nombre_pizarra, nombre_partido)
+    for e in elementos:
+        if e["tipo"] == "flecha":
+            lienzo.flecha(e["x1"], e["y1"], e["x2"], e["y2"])
+    for e in elementos:
+        if e["tipo"] == "jugador":
+            j = mapa_jugadores.get(e.get("id_jugador"))
+            lienzo.jugador(
+                e["x"], e["y"],
+                j.get("url_foto") if j else None,
+                j["nombre"].split()[0] if j else "?",
+            )
+        elif e["tipo"] == "rival":
+            lienzo.marca_rival(e["x"], e["y"], e.get("etiqueta", "R"))
+        elif e["tipo"] == "balon":
+            lienzo.balon(e["x"], e["y"])
+    return lienzo.bytes_png()
+
+
+def imagen_convocatoria_png(slots, asignaciones, mapa_jugadores, formacion, nombre_partido) -> bytes:
+    lienzo = _LienzoCampo(medio_campo=False)
+    lienzo.titulo(f"Once inicial · {formacion}", nombre_partido)
+    for slot in slots:
+        j_id = asignaciones.get(slot["clave"])
+        j = mapa_jugadores.get(j_id) if j_id else None
+        lienzo.jugador(
+            slot["x"], slot["y"],
+            j.get("url_foto") if j else None,
+            j["nombre"].split()[0] if j else slot["etiqueta"],
+        )
+    return lienzo.bytes_png()

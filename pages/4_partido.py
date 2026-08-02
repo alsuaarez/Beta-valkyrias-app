@@ -4,6 +4,7 @@ import uuid
 from utils.config import (
     init_connection, aplicar_estilos, requiere_sesion, cabecera,
     FORMACIONES, COLOR_SECUNDARIO, renderizar_html,
+    imagen_pizarra_png, imagen_convocatoria_png,
 )
 
 # ============================================================
@@ -70,6 +71,70 @@ tab_convocatoria, tab_estrategia = st.tabs(["📋 Convocatoria", "🎯 Estrategi
 # ============================================================
 # HELPERS DE DIBUJO (HTML/CSS + SVG, sin dependencias externas)
 # ============================================================
+def _marcas_svg_completo() -> str:
+    """Líneas reglamentarias de un campo completo (para la Convocatoria):
+    línea de medio campo, círculo central y las dos áreas."""
+    color = "rgba(255,255,255,.65)"
+    return f"""
+    <line x1="0" y1="50" x2="100" y2="50" stroke="{color}" stroke-width="0.6"/>
+    <circle cx="50" cy="50" r="9" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <circle cx="50" cy="50" r="0.9" fill="{color}"/>
+
+    <rect x="21" y="0" width="58" height="14" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <rect x="37" y="0" width="26" height="5" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <circle cx="50" cy="10" r="0.9" fill="{color}"/>
+    <path d="M 40,14 A 8,8 0 0 0 60,14" fill="none" stroke="{color}" stroke-width="0.6"/>
+
+    <rect x="21" y="86" width="58" height="14" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <rect x="37" y="95" width="26" height="5" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <circle cx="50" cy="90" r="0.9" fill="{color}"/>
+    <path d="M 40,86 A 8,8 0 0 1 60,86" fill="none" stroke="{color}" stroke-width="0.6"/>
+    """
+
+
+def _marcas_svg_medio_campo() -> str:
+    """Líneas reglamentarias de medio campo (para la Estrategia): línea de
+    medio campo arriba, área grande, área pequeña, punto de penalti, arco
+    y banderines de córner abajo (nuestra portería)."""
+    color = "rgba(255,255,255,.65)"
+    return f"""
+    <path d="M 35,0 A 15,15 0 0 0 65,0" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <circle cx="50" cy="0" r="0.9" fill="{color}"/>
+
+    <rect x="21" y="82" width="58" height="18" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <rect x="37" y="94" width="26" height="6" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <circle cx="50" cy="88" r="0.9" fill="{color}"/>
+    <path d="M 40,82 A 10,10 0 0 1 60,82" fill="none" stroke="{color}" stroke-width="0.6"/>
+
+    <path d="M 0,97 A 3,3 0 0 0 3,100" fill="none" stroke="{color}" stroke-width="0.6"/>
+    <path d="M 100,97 A 3,3 0 0 1 97,100" fill="none" stroke="{color}" stroke-width="0.6"/>
+    """
+
+
+def _envolver_con_ejes(pitch_html: str) -> str:
+    """Envuelve el campo con una regla de coordenadas 0-100: números en el
+    borde izquierdo (eje Y, de arriba abajo) y en el borde inferior (eje X,
+    de izquierda a derecha), para poder leer directamente qué valor poner
+    en los sliders de posición según dónde quieras colocar cada elemento."""
+    etiquetas_y = "".join(f"<span>{i}</span>" for i in range(0, 101, 10))
+    etiquetas_x = "".join(f"<span>{i}</span>" for i in range(0, 101, 10))
+    return f"""
+    <div style="display:flex; align-items:stretch; gap:6px;">
+        <div style="display:flex; flex-direction:column; justify-content:space-between;
+            width:22px; font-size:0.62rem; color:#5A6472; text-align:right; padding:2px 0;">
+            {etiquetas_y}
+        </div>
+        <div style="flex:1; min-width:0;">
+            {pitch_html}
+            <div style="display:flex; justify-content:space-between;
+                font-size:0.62rem; color:#5A6472; margin-top:4px; padding:0 2px;">
+                {etiquetas_x}
+            </div>
+        </div>
+    </div>
+    """
+
+
 def render_campo_convocatoria(slots, asignaciones):
     marcas = ""
     for slot in slots:
@@ -96,18 +161,23 @@ def render_campo_convocatoria(slots, asignaciones):
             {contenido}
         </div>"""
 
-    return f"""
+    pitch_html = f"""
     <div style="position:relative; width:100%; padding-top:135%;
         background: repeating-linear-gradient(0deg, #2E7D46, #2E7D46 10%, #33884C 10%, #33884C 20%);
         border-radius:14px; border:3px solid white; overflow:hidden;
         box-shadow:0 4px 16px rgba(0,0,0,.15);">
-        <div style="position:absolute; top:4%; left:8%; right:8%; bottom:4%;
+        <div style="position:absolute; top:1.5%; left:4%; right:4%; bottom:1.5%;
             border:2px solid rgba(255,255,255,.55); border-radius:6px;"></div>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+            style="position:absolute;top:0;left:0;width:100%;height:100%;">
+            {_marcas_svg_completo()}
+        </svg>
         <div style="position:absolute; top:0; left:0; right:0; bottom:0;">
             {marcas}
         </div>
     </div>
     """
+    return _envolver_con_ejes(pitch_html)
 
 
 def render_media_pitch(elementos):
@@ -141,8 +211,8 @@ def render_media_pitch(elementos):
             marcas_html += f"""
             <div style="position:absolute;left:{e['x']}%;top:{e['y']}%;transform:translate(-50%,-50%);font-size:1.4rem;">⚽</div>"""
 
-    return f"""
-    <div style="position:relative; width:100%; padding-top:65%;
+    pitch_html = f"""
+    <div style="position:relative; width:100%; padding-top:70%;
         background: repeating-linear-gradient(0deg, #2E7D46, #2E7D46 10%, #33884C 10%, #33884C 20%);
         border-radius:14px; border:3px solid white; overflow:hidden;
         box-shadow:0 4px 16px rgba(0,0,0,.15);">
@@ -153,7 +223,7 @@ def render_media_pitch(elementos):
                     <path d="M0,0 L6,3 L0,6 Z" fill="{COLOR_SECUNDARIO}"/>
                 </marker>
             </defs>
-            <circle cx="50" cy="100" r="16" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="0.6"/>
+            {_marcas_svg_medio_campo()}
             {flechas_svg}
         </svg>
         <div style="position:absolute;top:0;left:0;right:0;bottom:0;">
@@ -161,6 +231,7 @@ def render_media_pitch(elementos):
         </div>
     </div>
     """
+    return _envolver_con_ejes(pitch_html)
 
 
 def descripcion_elemento(e):
@@ -246,6 +317,23 @@ with tab_convocatoria:
     with col_pitch:
         renderizar_html(render_campo_convocatoria(slots, asignaciones))
         st.caption(f"{len(asignaciones)}/11 posiciones asignadas")
+
+        if len(asignaciones) == 11:
+            if st.button("🖼️ Generar imagen del Once", key=f"gen_img_once_{state_key}"):
+                with st.spinner("Generando imagen…"):
+                    png_once = imagen_convocatoria_png(
+                        slots, asignaciones, mapa_jugadores, formacion_sel, mapa_partidos[id_partido_sel]
+                    )
+                    st.session_state[f"png_once_{state_key}"] = png_once
+
+            if f"png_once_{state_key}" in st.session_state:
+                st.download_button(
+                    "⬇️ Descargar imagen (guárdala en tu tablet)",
+                    data=st.session_state[f"png_once_{state_key}"],
+                    file_name=f"once_{mapa_partidos[id_partido_sel].replace(' ', '_')}.png",
+                    mime="image/png",
+                    key=f"dl_once_{state_key}",
+                )
 
     st.markdown("#### Banquillo (máximo 6)")
     disponibles_banquillo = [
@@ -548,6 +636,26 @@ with tab_estrategia:
 
         with col_pizarra:
             renderizar_html(render_media_pitch(estado["elementos"]))
+
+            if estado["elementos"]:
+                if st.button("🖼️ Generar imagen de la pizarra", key=f"gen_img_{editor_key}"):
+                    with st.spinner("Generando imagen…"):
+                        png_pizarra = imagen_pizarra_png(
+                            estado["elementos"], mapa_jugadores,
+                            estado["nombre"] or "Pizarra táctica",
+                            mapa_partidos[id_partido_sel],
+                        )
+                        st.session_state[f"png_{editor_key}"] = png_pizarra
+
+                if f"png_{editor_key}" in st.session_state:
+                    nombre_archivo = (estado["nombre"] or "pizarra").replace(" ", "_")
+                    st.download_button(
+                        "⬇️ Descargar imagen (guárdala en tu tablet)",
+                        data=st.session_state[f"png_{editor_key}"],
+                        file_name=f"{nombre_archivo}.png",
+                        mime="image/png",
+                        key=f"dl_{editor_key}",
+                    )
 
         st.markdown("---")
         if st.button("💾 Guardar pizarra", type="primary"):
