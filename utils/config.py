@@ -519,9 +519,15 @@ class _LienzoCampo:
         return (x_pct / 100 * self.ancho, self.margen_top + y_pct / 100 * self.alto_pitch)
 
     def bbox(self, cx, cy, r):
-        x1, y1 = self.px(cx - r, cy - r)
-        x2, y2 = self.px(cx + r, cy + r)
-        return [x1, y1, x2, y2]
+        # OJO: aquí NO se puede usar px() para los dos extremos del radio,
+        # porque px() escala X según self.ancho e Y según self.alto_pitch
+        # (valores distintos, ya que el medio campo es más ancho que alto).
+        # Si se usa esa escala para el radio, los círculos y arcos del área
+        # salen aplastados en vez de redondos. Por eso aquí se aplica
+        # SIEMPRE la escala de self.ancho, igual en X que en Y.
+        cx_px, cy_px = self.px(cx, cy)
+        radio = r * (self.ancho / 100)
+        return [cx_px - radio, cy_px - radio, cx_px + radio, cy_px + radio]
 
     def _dibujar_cesped(self):
         franjas = 10

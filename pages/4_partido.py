@@ -4,7 +4,6 @@ import uuid
 from utils.config import (
     init_connection, aplicar_estilos, requiere_sesion, cabecera,
     FORMACIONES, COLOR_SECUNDARIO, renderizar_html,
-    imagen_pizarra_png, imagen_convocatoria_png,
 )
 
 # ============================================================
@@ -17,6 +16,34 @@ requiere_sesion()
 
 if st.session_state.get("rol") not in ("Admin", "Tecnico"):
     st.error("🚫 Acceso denegado. Esta sección es solo para Admin y Técnico.")
+    st.stop()
+
+# ============================================================
+# MODO CAPTURA: pantalla limpia (sin menú lateral ni cabecera) para poder
+# hacer una captura de pantalla nítida del campo y llevarla a la tablet.
+# ============================================================
+if st.session_state.get("modo_captura"):
+    datos_captura = st.session_state["modo_captura"]
+
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"] { display: none !important; }
+        div[data-testid="stToolbar"] { display: none !important; }
+        .block-container { padding-top: 1.5rem !important; max-width: 760px !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button("✖️ Salir del modo captura"):
+        del st.session_state["modo_captura"]
+        st.rerun()
+
+    st.markdown(f"### {datos_captura['titulo']}")
+    renderizar_html(datos_captura["html"])
+    st.caption("Haz la captura de pantalla ahora (o usa las herramientas de tu tablet) y luego sal del modo captura.")
     st.stop()
 
 cabecera("Partido", "Convocatoria y pizarra táctica", icono="🧩")
@@ -319,21 +346,13 @@ with tab_convocatoria:
         st.caption(f"{len(asignaciones)}/11 posiciones asignadas")
 
         if len(asignaciones) == 11:
-            if st.button("🖼️ Generar imagen del Once", key=f"gen_img_once_{state_key}"):
-                with st.spinner("Generando imagen…"):
-                    png_once = imagen_convocatoria_png(
-                        slots, asignaciones, mapa_jugadores, formacion_sel, mapa_partidos[id_partido_sel]
-                    )
-                    st.session_state[f"png_once_{state_key}"] = png_once
-
-            if f"png_once_{state_key}" in st.session_state:
-                st.download_button(
-                    "⬇️ Descargar imagen (guárdala en tu tablet)",
-                    data=st.session_state[f"png_once_{state_key}"],
-                    file_name=f"once_{mapa_partidos[id_partido_sel].replace(' ', '_')}.png",
-                    mime="image/png",
-                    key=f"dl_once_{state_key}",
-                )
+            if st.button("📸 Modo captura (pantalla completa)", key=f"captura_once_{state_key}"):
+                st.session_state["modo_captura"] = {
+                    "tipo": "once",
+                    "html": render_campo_convocatoria(slots, asignaciones),
+                    "titulo": f"Once inicial · {formacion_sel} — {mapa_partidos[id_partido_sel]}",
+                }
+                st.rerun()
 
     st.markdown("#### Banquillo (máximo 6)")
     disponibles_banquillo = [
@@ -638,24 +657,13 @@ with tab_estrategia:
             renderizar_html(render_media_pitch(estado["elementos"]))
 
             if estado["elementos"]:
-                if st.button("🖼️ Generar imagen de la pizarra", key=f"gen_img_{editor_key}"):
-                    with st.spinner("Generando imagen…"):
-                        png_pizarra = imagen_pizarra_png(
-                            estado["elementos"], mapa_jugadores,
-                            estado["nombre"] or "Pizarra táctica",
-                            mapa_partidos[id_partido_sel],
-                        )
-                        st.session_state[f"png_{editor_key}"] = png_pizarra
-
-                if f"png_{editor_key}" in st.session_state:
-                    nombre_archivo = (estado["nombre"] or "pizarra").replace(" ", "_")
-                    st.download_button(
-                        "⬇️ Descargar imagen (guárdala en tu tablet)",
-                        data=st.session_state[f"png_{editor_key}"],
-                        file_name=f"{nombre_archivo}.png",
-                        mime="image/png",
-                        key=f"dl_{editor_key}",
-                    )
+                if st.button("📸 Modo captura (pantalla completa)", key=f"captura_{editor_key}"):
+                    st.session_state["modo_captura"] = {
+                        "tipo": "pizarra",
+                        "html": render_media_pitch(estado["elementos"]),
+                        "titulo": f"{estado['nombre'] or 'Pizarra táctica'} — {mapa_partidos[id_partido_sel]}",
+                    }
+                    st.rerun()
 
         st.markdown("---")
         if st.button("💾 Guardar pizarra", type="primary"):
