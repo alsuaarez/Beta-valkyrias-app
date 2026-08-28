@@ -3,7 +3,7 @@ import uuid
 
 from utils.config import (
     init_connection, aplicar_estilos, requiere_sesion, cabecera,
-    FORMACIONES, COLOR_SECUNDARIO, renderizar_html,
+    FORMACIONES, COLOR_SECUNDARIO, renderizar_html, nombre_mostrar,
 )
 
 # ============================================================
@@ -62,7 +62,7 @@ def cargar_partidos():
 def cargar_plantilla():
     r = (
         supabase.table("jugadores")
-        .select("id_jugador, nombre, dorsal, posicion, url_foto")
+        .select("id_jugador, nombre, dorsal, posicion, url_foto, apodo")
         .order("dorsal")
         .execute()
     )
@@ -169,7 +169,7 @@ def render_campo_convocatoria(slots, asignaciones):
         if j_id and j_id in mapa_jugadores:
             jugador = mapa_jugadores[j_id]
             foto = jugador.get("url_foto") or "https://placehold.co/60x60?text=%20"
-            nombre_corto = jugador["nombre"].split()[0]
+            nombre_corto = nombre_mostrar(jugador)
             contenido = f"""
                 <img src="{foto}" style="width:40px;height:40px;border-radius:50%;
                     border:2px solid white;object-fit:cover;box-shadow:0 2px 6px rgba(0,0,0,.4);">
@@ -221,7 +221,7 @@ def render_media_pitch(elementos):
         if e["tipo"] == "jugador":
             j = mapa_jugadores.get(e.get("id_jugador"))
             foto = (j.get("url_foto") if j else None) or "https://placehold.co/50x50?text=%20"
-            nombre = j["nombre"].split()[0] if j else "?"
+            nombre = nombre_mostrar(j) if j else "?"
             marcas_html += f"""
             <div style="position:absolute;left:{e['x']}%;top:{e['y']}%;transform:translate(-50%,-50%);text-align:center;">
                 <img src="{foto}" style="width:36px;height:36px;border-radius:50%;
@@ -264,7 +264,7 @@ def render_media_pitch(elementos):
 def descripcion_elemento(e):
     if e["tipo"] == "jugador":
         j = mapa_jugadores.get(e.get("id_jugador"))
-        return f"🔵 {j['nombre'] if j else 'Jugador'}"
+        return f"🔵 {nombre_mostrar(j) if j else 'Jugador'}"
     if e["tipo"] == "rival":
         return f"🔴 Rival ({e.get('etiqueta', 'R')})"
     if e["tipo"] == "balon":
@@ -333,7 +333,7 @@ with tab_convocatoria:
                 etiqueta,
                 opciones,
                 index=idx,
-                format_func=lambda x: "—" if x is None else mapa_jugadores[x]["nombre"],
+                format_func=lambda x: "—" if x is None else nombre_mostrar(mapa_jugadores[x]),
                 key=f"{state_key}_slot_{clave}",
             )
             if seleccion is not None:
@@ -364,8 +364,8 @@ with tab_convocatoria:
         "Selecciona hasta 6 suplentes",
         options=disponibles_banquillo,
         default=suplentes_validos,
-        format_func=lambda x: mapa_jugadores[x]["nombre"],
-        max_selections=6,
+        format_func=lambda x: nombre_mostrar(mapa_jugadores[x]),
+        max_selections=7,
         key=f"{state_key}_banquillo",
     )
     estado_conv["suplentes"] = suplentes_sel
@@ -553,7 +553,7 @@ with tab_estrategia:
                 disponibles = [tid for tid in titulares_ids if tid not in usados]
                 if disponibles:
                     jugador_elem = st.selectbox(
-                        "Jugador", disponibles, format_func=lambda x: mapa_jugadores[x]["nombre"]
+                        "Jugador", disponibles, format_func=lambda x: nombre_mostrar(mapa_jugadores[x])
                     )
                     x_j = st.slider("Posición horizontal", 0, 100, 50, key="x_jugador_nuevo")
                     y_j = st.slider("Posición vertical", 0, 100, 50, key="y_jugador_nuevo")
@@ -612,7 +612,7 @@ with tab_estrategia:
                         nuevo_jugador = st.selectbox(
                             "Reasignar jugador", opciones_j,
                             index=opciones_j.index(elem["id_jugador"]) if elem["id_jugador"] in opciones_j else 0,
-                            format_func=lambda x: mapa_jugadores[x]["nombre"],
+                            format_func=lambda x: nombre_mostrar(mapa_jugadores[x]),
                             key=f"edit_jugador_{elem['id']}",
                         )
                         nx = st.slider("X", 0, 100, int(elem["x"]), key=f"edit_x_{elem['id']}")

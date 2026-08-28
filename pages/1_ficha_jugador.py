@@ -66,7 +66,7 @@ with col_datos:
     info_cols = st.columns(4)
     info_cols[0].metric("Edad", f"{edad} años" if edad is not None else "—")
     info_cols[1].metric("Nacionalidad", jugador.get("nacionalidad") or "—")
-    info_cols[2].metric("Altura", f'{jugador["altura_cm"]} cm' if jugador.get("altura_cm") else "—")
+    info_cols[2].metric("Apodo", jugador.get("apodo") or "—")
     info_cols[3].metric("Pie dominante", jugador.get("pie_dominante") or "—")
 
 st.markdown("---")
@@ -328,25 +328,21 @@ if tab_editar is not None:
             nacionalidad_edit = c6.text_input("Nacionalidad", value=jugador.get("nacionalidad", "") or "")
 
             c7, c8 = st.columns(2)
-            altura_edit = c7.number_input(
-                "Altura (cm)", min_value=0, max_value=230, step=1,
-                value=int(jugador.get("altura_cm") or 0),
-            )
+            apodo_edit = c7.text_input("Apodo", value=jugador.get("apodo", "") or "")
             with c8:
+                if jugador.get("url_foto"):
+                    st.image(jugador["url_foto"], width=80, caption="Foto actual")
                 foto_archivo_edit = st.file_uploader(
-                    "Cambiar foto", type=["jpg", "jpeg", "png", "webp"],
-                    help="Se sube automáticamente a Supabase Storage. Si no subes nada, se mantiene la foto actual.",
+                    "Cambiar foto (opcional)", type=["jpg", "jpeg", "png", "webp"],
+                    help="Solo hace falta si quieres reemplazar la foto actual. Si no subes nada, se mantiene la que ya hay.",
                 )
-            foto_edit = st.text_input(
-                "…o pega una URL de foto (opcional, solo si no subes archivo)",
-                value=jugador.get("url_foto", "") or "",
-            )
 
             guardar = st.form_submit_button("💾 Guardar cambios", type="primary")
 
             if guardar:
                 try:
-                    url_foto_final = foto_edit
+                    # Por defecto se mantiene la foto que ya tenía; solo cambia si se sube un archivo nuevo.
+                    url_foto_final = jugador.get("url_foto", "")
                     if foto_archivo_edit is not None:
                         try:
                             url_foto_final = subir_foto_jugador(
@@ -366,7 +362,7 @@ if tab_editar is not None:
                         "pie_dominante": pie_edit,
                         "fecha_nacimiento": str(fecha_nac_edit),
                         "nacionalidad": nacionalidad_edit,
-                        "altura_cm": int(altura_edit) if altura_edit else None,
+                        "apodo": apodo_edit,
                         "url_foto": url_foto_final,
                     }).eq("id_jugador", id_jugador).execute()
                     st.success("✅ Ficha actualizada correctamente.")

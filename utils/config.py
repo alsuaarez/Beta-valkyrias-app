@@ -152,6 +152,17 @@ def calcular_edad(fecha_nacimiento):
     )
 
 
+def nombre_mostrar(jugador: dict) -> str:
+    """Nombre a mostrar en Convocatoria y Pizarra táctica: usa el apodo si el
+    jugador tiene uno asignado; si no, cae al primer nombre de pila. Así, en
+    todo lo relacionado con 'Partido' nunca se expone el nombre completo."""
+    apodo = (jugador or {}).get("apodo")
+    if apodo:
+        return apodo
+    nombre = (jugador or {}).get("nombre", "") or ""
+    return nombre.split()[0] if nombre else "Jugador"
+
+
 # ============================================================
 # ESTILOS GLOBALES (se inyectan al principio de cada página)
 # ============================================================
@@ -653,7 +664,7 @@ def imagen_pizarra_png(elementos, mapa_jugadores, nombre_pizarra, nombre_partido
             lienzo.jugador(
                 e["x"], e["y"],
                 j.get("url_foto") if j else None,
-                j["nombre"].split()[0] if j else "?",
+                nombre_mostrar(j) if j else "?",
             )
         elif e["tipo"] == "rival":
             lienzo.marca_rival(e["x"], e["y"], e.get("etiqueta", "R"))
@@ -671,6 +682,6 @@ def imagen_convocatoria_png(slots, asignaciones, mapa_jugadores, formacion, nomb
         lienzo.jugador(
             slot["x"], slot["y"],
             j.get("url_foto") if j else None,
-            j["nombre"].split()[0] if j else slot["etiqueta"],
+            nombre_mostrar(j) if j else slot["etiqueta"],
         )
     return lienzo.bytes_png()

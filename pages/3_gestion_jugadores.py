@@ -56,7 +56,7 @@ with st.container(border=True):
         nacionalidad = c6.text_input("Nacionalidad")
 
         c7, c8 = st.columns(2)
-        altura_cm = c7.number_input("Altura (cm)", min_value=0, max_value=230, step=1)
+        apodo = c7.text_input("Apodo", placeholder="Se usará en convocatorias y pizarra táctica")
         with c8:
             foto_archivo = st.file_uploader(
                 "Foto del jugador", type=["jpg", "jpeg", "png", "webp"],
@@ -90,7 +90,7 @@ with st.container(border=True):
                         "pie_dominante": pie_dominante,
                         "fecha_nacimiento": str(fecha_nacimiento),
                         "nacionalidad": nacionalidad or None,
-                        "altura_cm": int(altura_cm) if altura_cm else None,
+                        "apodo": apodo or None,
                         "url_foto": url_foto_manual or None,
                     }).execute()
 
